@@ -1,5 +1,32 @@
+pub const NUMBER_OF_CARDS_IN_PACK: usize = 14;
 
-pub struct Pack(PackType, [char; 14]);
+pub const ACE: usize = 1;
+
+pub const JACK: usize = 11;
+
+pub const QUEEN: usize = 12;
+
+pub const KING: usize = 13;
+
+
+
+#[derive(Debug, PartialEq, Eq, Copy, Clone, PartialOrd, Ord)]
+pub struct Value(usize);
+
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+pub enum Color {
+    Red,
+    Black,
+}
+
+impl Color {
+    pub fn get_opposing_color(&self) -> Color {
+        match self {
+            Self::Red => Self::Black,
+            Self::Black => Self::Red,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum PackType {
@@ -9,32 +36,42 @@ pub enum PackType {
     Diamonds,
 }
 
-#[derive(PartialEq, Eq)]
-enum Color {
-    Red,
-    Black,
-}
-
 impl PackType {
-    pub fn is_opposing_color(&self, other: &PackType) -> bool {
-        fn get_colour(pack: &PackType) -> Color {
-            match pack {
-                PackType::Spades | PackType::Clubs => Color::Black,
-                PackType::Hearts | PackType::Diamonds => Color::Red,
-            }
+    pub fn get_colour(&self) -> Color {
+        match &self {
+            PackType::Spades | PackType::Clubs => Color::Black,
+            PackType::Hearts | PackType::Diamonds => Color::Red,
         }
+    }
 
-        get_colour(self) != get_colour(other)
+    pub fn is_opposing_color(&self, other: &PackType) -> bool {
+        self.get_colour() != other.get_colour()
+    }
+
+    pub fn get_opposing_pack_types(&self) -> (PackType, PackType) {
+        match self.get_colour() {
+            Color::Red => (PackType::Spades, PackType::Clubs),
+            Color::Black => (PackType::Hearts, PackType::Diamonds),
+        }
     }
 }
 
-pub const ACE: usize = 1;
 
-pub const JACK: usize = 11;
 
-pub const QUEEN: usize = 12;
 
-pub const KING: usize = 13;
+pub struct Pack(PackType, [char; 14]);
+
+impl Pack {
+    fn from(pack_type: PackType) -> &'static Self {
+        match pack_type {
+            PackType::Spades => &SPADES,
+            PackType::Clubs => &CLUBS,
+            PackType::Hearts => &HEARTS,
+            PackType::Diamonds => &DIAMONDS,
+        }
+    }
+}
+
 
 pub const SPADES: Pack
     = Pack(PackType::Spades, [ '🂡', '🂢', '🂣', '🂤', '🂥', '🂦', '🂧', '🂨', '🂩', '🂪', '🂫', '🂬', '🂭', '🂮', ]);
@@ -48,6 +85,7 @@ pub const HEARTS: Pack
 pub const DIAMONDS: Pack
     = Pack(PackType::Diamonds, [ '🃁', '🃂', '🃃', '🃄', '🃅', '🃆', '🃇', '🃈', '🃉', '🃊', '🃋', '🃌', '🃍', '🃎', ]);
 
+
 impl std::fmt::Debug for Pack {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("Pack")
@@ -56,12 +94,21 @@ impl std::fmt::Debug for Pack {
     }
 }
 
-pub struct Card<'a>(usize, &'a Pack);
+
+
+#[derive(Debug, Clone)]
+pub struct FuzzyCard {
+    pub color: Color,
+    pub value: Value,
+}
+
+#[derive(Clone)]
+pub struct Card<'a>(Value, &'a Pack);
 
 impl<'a> std::fmt::Debug for Card<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("Card")
-            .field(&self.0)
+            .field(&self.0.0)
             .field(&self.1.0)
             .finish()
     }
@@ -69,7 +116,15 @@ impl<'a> std::fmt::Debug for Card<'a> {
 
 impl<'data> Card<'data> {
     pub fn new(value: usize, pack: &'data Pack) -> Self {
-        Self(value, pack)
+        Self(Value(value), pack)
+    }
+
+    pub fn get_color(&self) -> Color {
+        self.1.0.get_colour()
+    }
+
+    pub fn get_value(&self) -> Value {
+        self.0
     }
 
     pub fn is_same_pack(&self, other: &Card<'data>) -> bool {
@@ -90,14 +145,34 @@ impl<'data> Card<'data> {
         let Card(s_value, _) = *self;
         let Card(o_value, _) = *other;
 
-        s_value + 1 == o_value
+        s_value.0 + 1 == o_value.0
     }
 
     pub fn is_playable_pair_bigger(&self, other: &Card<'data>) -> bool {
         let Card(s_value, _) = *self;
         let Card(o_value, _) = *other;
 
-        o_value + 1 == s_value
+        o_value.0 + 1 == s_value.0
+    }
+
+    pub fn get_parent_data(&self) -> Option<FuzzyCard> {
+        (self.0.0 < KING)
+            .then(|| FuzzyCard { color: self.get_color().get_opposing_color(), value: Value(self.0.0 + 1) })
+    }
+
+    pub fn get_parents(&self) -> Option<(Card<'data>, Card<'data>)> {
+        let Card(value, Pack(pack_type, _)) = *self;
+
+        (value.0 < KING)
+            .then(|| {
+                let (fst_pack_type, snd_pack_type) = pack_type.get_opposing_pack_types();
+                let fst_pack = Pack::from(fst_pack_type);
+                let snd_pack = Pack::from(snd_pack_type);
+
+                let parent_value = Value(value.0 + 1);
+
+                (Card(parent_value, fst_pack), Card(parent_value, snd_pack))
+            })
     }
 }
 
@@ -107,6 +182,6 @@ impl<'a> std::fmt::Display for Card<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let Card(value, Pack(_, pack)) = *self;
 
-        f.write_fmt(format_args!("{}", pack[value - 1]))
+        f.write_fmt(format_args!("{}", pack[value.0 - 1]))
     }
 }

@@ -1,20 +1,35 @@
-use std::iter::once;
-
 use itertools::Itertools;
 
-use super::{card::{Card, RawCard}, error::GameError};
+use super::{card::{Card, Color, FuzzyCard, RawCard, Value, NUMBER_OF_CARDS_IN_PACK}, error::GameError};
 
-pub const MAX_NUMBER_OF_CARDS_IN_COLUMN: usize = 14 * 2;
+pub const MAX_NUMBER_OF_CARDS_IN_COLUMN: usize = NUMBER_OF_CARDS_IN_PACK * 2;
 
 #[derive(Debug)]
 pub struct Column<'data> {
     cards: Vec<Card<'data>>,
 }
 
-pub trait HoldsCard<'data> {
-    fn can_pick_card(&self) -> bool;
+#[derive(Debug, Clone, Copy)]
+pub struct ColumnDepth(usize);
 
-    fn can_put_card(&self, card: &Card<'data>) -> bool;
+#[derive(Debug, Clone, Copy)]
+pub enum EquivalentPairColumnDepths {
+    One(ColumnDepth),
+    Two(ColumnDepth, ColumnDepth),
+}
+
+#[derive(Debug)]
+pub struct PickableCard<'data> { card: Card<'data> }
+
+// Interesting idea, but you don't actually confirm that the pick matches the column or the game state at the time.
+// You could probably bind those together with this move cleverly, but presently I'm not able to figure that out.
+#[derive(Debug)]
+pub struct PickableStack<'data> { deepest_card: Card<'data>, size: usize }
+
+pub trait HoldsCard<'data> {
+    fn can_pick_card(&self) -> Option<PickableCard<'data>>;
+
+    fn can_put_card(&self, picked_card: &PickableCard<'data>) -> bool;
 
     fn pick_card(&mut self) -> Result<Card<'data>, GameError>;
 
@@ -22,13 +37,13 @@ pub trait HoldsCard<'data> {
 }
 
 pub trait HoldsStack<'data> {
-    fn can_pick_stack(&self, pick_size: usize) -> bool;
+    fn can_pick_stack(&self, pick_size: usize) -> Option<PickableStack<'data>>;
 
-    fn can_put_stack(&self, stack: &Vec<&Card<'data>>) -> bool;
+    fn can_put_stack(&self, picked_stack: &PickableStack<'data>) -> bool;
 
-    fn pick_stack(&mut self, pick_size: usize) -> Result<Vec<Card<'data>>, GameError>;
+    fn pick_stack(&mut self, pick: PickableStack<'data>) -> Result<Vec<Card<'data>>, GameError>;
 
-    fn take_stack_from<T: HoldsStack<'data>>(&mut self, from: &mut T, pick_size: usize) -> Result<(), GameError>;
+    fn take_stack_from<T: HoldsStack<'data>>(&mut self, from: &mut T, pick: PickableStack<'data>) -> Result<(), GameError>;
 }
 
 
@@ -44,10 +59,39 @@ impl<'data> Column<'data> {
         Self { cards: cards_vec }
     }
 
-    // Exists for <Tableau as Display>
+    // Created for <Tableau as Display>
     pub(super) fn get_card(&self, index: usize) -> Option<&Card<'data>> {
         self.cards
             .get(index)
+    }
+
+    pub fn get_largest_stack_pick(&self) -> Option<PickableStack<'data>> {
+        (1..=self.len())
+            .map_while(|n| self.can_pick_stack(n))
+            .last()
+    }
+
+    fn find_card(&self, f_card: &FuzzyCard) -> Option<ColumnDepth> {
+        self.cards.iter()
+            .rev()
+            .position(|card|
+                card.get_color() == f_card.color
+                    && card.get_value() == f_card.value)
+            .map(ColumnDepth)
+    }
+
+    pub fn find_equivalent_pair(&self, f_card: &FuzzyCard) -> Option<EquivalentPairColumnDepths> {
+        self.find_card(f_card)
+            .map(|first_card| {
+                match self.find_card(f_card) {
+                    Some(second_card) => EquivalentPairColumnDepths::Two(first_card, second_card),
+                    None => EquivalentPairColumnDepths::One(first_card),
+                }
+            })
+    }
+
+    pub fn len(&self) -> usize {
+        self.cards.len()
     }
 
     fn is_playable_pair(parent: &Card<'data>, child: &Card<'data>) -> bool {
@@ -57,15 +101,16 @@ impl<'data> Column<'data> {
 }
 
 impl<'data> HoldsCard<'data> for Column<'data> {
-    fn can_pick_card(&self) -> bool {
-        !(self.cards.is_empty())
+    fn can_pick_card(&self) -> Option<PickableCard<'data>> {
+        self.cards
+            .last()
+            .map(|card| PickableCard { card: card.clone() })
     }
     
-    fn can_put_card(&self, card: &Card<'data>) -> bool {
+    fn can_put_card(&self, picked_card: &PickableCard<'data>) -> bool {
         self.cards.last()
-            .is_none_or(|last_card| Column::is_playable_pair(last_card, card))
+            .is_none_or(|last_card| Self::is_playable_pair(last_card, &picked_card.card))
     }
-    
     
     fn pick_card(&mut self) -> Result<Card<'data>, GameError> {
         self.cards
@@ -74,66 +119,64 @@ impl<'data> HoldsCard<'data> for Column<'data> {
     }
 
     fn take_card_from<T: HoldsCard<'data>>(&mut self, from: &mut T) -> Result<(), GameError> {
-        Ok(self.cards.push(from.pick_card()?))
+        self.cards.push(from.pick_card()?);
+
+        Ok(())
     }
 }
 
 impl<'data> HoldsStack<'data> for Column<'data> {
-    fn can_pick_stack(&self, pick_size: usize) -> bool {
-        if pick_size < self.cards.len() {
-            return false;
+    fn can_pick_stack(&self, pick_size: usize) -> Option<PickableStack<'data>> {
+        if self.cards.len() < pick_size { return None; }
+        if pick_size == 1  {
+            return self.cards.last().map(|last| PickableStack { deepest_card: last.clone(), size: pick_size } )
         }
 
         self.cards.iter()
             .rev()
             .take(pick_size)
+            // Get last child, assuming all cards in stack are playable pairs with neighbours
             .tuple_windows()
-            .all(|(child, parent)| Self::is_playable_pair(parent, child))
+            .map(|(child, parent)| Self::is_playable_pair(parent, child).then_some(child))
+            .reduce(|prev, cur| { prev.and(cur) })?
+            .map(|last| PickableStack { deepest_card: last.clone(), size: pick_size })
     }
     
-    fn can_put_stack(&self, stack: &Vec<&Card<'data>>) -> bool {
-        if let Some(last_card) = self.cards.iter().last() {
-            return once(last_card)
-                .chain(stack.iter().map(|v| *v))
-                .tuple_windows()
-                .all(|(parent, child)| Self::is_playable_pair(parent, child))
-        }
-
-        return true;
+    fn can_put_stack(&self, picked_stack: &PickableStack<'data>) -> bool {
+        self.cards
+            .iter()
+            .last()
+            .is_none_or(|last_card| Self::is_playable_pair(last_card, &picked_stack.deepest_card))
     }
 
-    fn pick_stack(&mut self, pick_size: usize) -> Result<Vec<Card<'data>>, GameError> {
+    fn pick_stack(&mut self, pick: PickableStack<'data>) -> Result<Vec<Card<'data>>, GameError> {
         let card_count = self.cards.len();
 
-        if card_count < pick_size {
-            return Err(GameError::InsufficientCardsForStackPick { stack_size: pick_size });
+        if card_count < pick.size {
+            return Err(GameError::InsufficientCardsForStackPick { stack_size: pick.size });
         }
     
-        Ok(self.cards.split_off(card_count - pick_size))
+        Ok(self.cards.split_off(card_count - pick.size))
     }
 
-    fn take_stack_from<T: HoldsStack<'data>>(&mut self, from: &mut T, pick_size: usize) -> Result<(), GameError> {
-        let mut picked = from.pick_stack(pick_size)?;
+    fn take_stack_from<T: HoldsStack<'data>>(&mut self, from: &mut T, pick: PickableStack<'data>) -> Result<(), GameError> {
+        let mut picked = from.pick_stack(pick)?;
 
-        Ok(self.cards.append(&mut picked))
+        self.cards.append(&mut picked);
+        Ok(())
     }    
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ReserveSlot<'data>(Option<Card<'data>>);
 
-impl<'data> Default for ReserveSlot<'data> {
-    fn default() -> Self {
-        Self(Default::default())
-    }
-}
-
 impl<'data> HoldsCard<'data> for ReserveSlot<'data> {
-    fn can_pick_card(&self) -> bool {
-        self.0.is_some()
+    fn can_pick_card(&self) -> Option<PickableCard<'data>> {
+        self.0.as_ref()
+            .map(|card| PickableCard { card: card.clone() })
     }
     
-    fn can_put_card(&self, _card: &Card<'data>) -> bool {
+    fn can_put_card(&self, _: &PickableCard<'data>) -> bool {
         self.0.is_none()
     }
 
@@ -151,8 +194,11 @@ impl<'data> HoldsCard<'data> for ReserveSlot<'data> {
         self.0 = Some(from.pick_card()?);
 
         Ok(())
-    }    
+    }
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct ReservePosition(usize);
 
 #[derive(Debug)]
 pub struct Reserve<'data>([ReserveSlot<'data>; 4]);
@@ -162,10 +208,10 @@ impl<'data> Reserve<'data> {
         Self(Default::default())
     }
 
-    pub fn at(&mut self, slot: usize) -> Result<&mut ReserveSlot<'data>, GameError> {
+    pub fn at(&mut self, slot: ReservePosition) -> Result<&mut ReserveSlot<'data>, GameError> {
         self.0
-            .get_mut(slot)
-            .ok_or_else(|| GameError::NoSuchReserveSlot(slot))
+            .get_mut(slot.0)
+            .ok_or_else(|| GameError::NoSuchReserveSlot(slot.0))
     }
 }
 
@@ -183,14 +229,8 @@ impl std::fmt::Display for Reserve<'_> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct FoundationStack<'data>(Vec<Card<'data>>);
-
-impl<'data> Default for FoundationStack<'data> {
-    fn default() -> Self {
-        Self(Default::default())
-    }
-}
 
 impl std::fmt::Display for FoundationStack<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -207,17 +247,19 @@ impl std::fmt::Display for FoundationStack<'_> {
 }
 
 impl<'data> HoldsCard<'data> for FoundationStack<'data> {
-    fn can_pick_card(&self) -> bool {
-        !(self.0.is_empty())
+    fn can_pick_card(&self) -> Option<PickableCard<'data>> {
+        self.0
+            .last()
+            .map(|card| PickableCard { card: card.clone() })
     }
     
-    fn can_put_card(&self, card: &Card<'data>) -> bool {
+    fn can_put_card(&self, picked_card: &PickableCard<'data>) -> bool {
         if let Some(last_card) = self.0.last() {
-            return last_card.is_same_pack(card)
-                && last_card.is_playable_pair_smaller(card);
+            return last_card.is_same_pack(&picked_card.card)
+                && last_card.is_playable_pair_smaller(&picked_card.card);
         }
 
-        return true;
+        true
     }
 
     fn pick_card(&mut self) -> Result<Card<'data>, GameError> {
@@ -227,9 +269,17 @@ impl<'data> HoldsCard<'data> for FoundationStack<'data> {
     }
 
     fn take_card_from<T: HoldsCard<'data>>(&mut self, from: &mut T) -> Result<(), GameError> {
-        Ok(self.0.push(from.pick_card()?))
+        self.0.push(from.pick_card()?);
+
+        Ok(())
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct FoundationPosition(usize);
+
+#[derive(Debug, Clone, Copy)]
+pub struct FoundationDepth(usize);
 
 #[derive(Debug)]
 pub struct Foundation<'data>([FoundationStack<'data>; 4]);
@@ -244,6 +294,8 @@ impl<'data> Foundation<'data> {
             .get_mut(stack)
             .ok_or_else(|| GameError::NoSuchFoundationStack(stack))
     }
+
+    fn find_equivalent_pair(&self) -> Option<>
 }
 
 impl std::fmt::Display for Foundation<'_> {

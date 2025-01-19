@@ -19,17 +19,15 @@ fn main() {
         vec![             (04,    S), (08,    C), (08,    S), (02,    C), (ACE,   D), (09, H),    ],
     ]);
 
-    println!("Initial game\n{game}");
 
-    game.from_column_to_column().unwrap();
-    println!("Moved stack from column to column\n{game}");
-
-    game.from_column_to_reserve().unwrap();
-    println!("Moved card from column to reserve\n{game}");
-
-    game.from_reserve_to_column().unwrap();
-    println!("Moved card from reserve to column\n{game}");
-
-    game.from_column_to_foundation().unwrap();
-    println!("Moved card from column to foundation\n{game}")
+    // let mut game2 = Game::new([
+    //     vec![ (02, H), (03, C), (04, D), (05, S), (11, H),  ],
+    //     vec![ (06, D), (07, S), (08, H), (09, C), ],
+    //     vec![],
+    //     vec![],
+    //     vec![],
+    //     vec![],
+    //     vec![],
+    //     vec![],
+    // ]);
 }
