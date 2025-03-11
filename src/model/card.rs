@@ -8,10 +8,25 @@ pub const QUEEN: usize = 12;
 
 pub const KING: usize = 13;
 
+pub const BLANK_CARD_CHAR: char = '🃟';
+
+pub const CARD_BACK_CHAR: char = '🂠';
 
 
-#[derive(Debug, PartialEq, Eq, Copy, Clone, PartialOrd, Ord)]
-pub struct Value(usize);
+#[derive(PartialEq, Eq, Copy, Clone, PartialOrd, Ord)]
+pub struct Rank(usize);
+
+impl std::fmt::Debug for Rank {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            1 => f.write_str("Ace"),
+            11 => f.write_str("Jack"),
+            12 => f.write_str("Queen"),
+            13 => f.write_str("King"),
+            n => f.write_fmt(format_args!("{n}")),
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum Color {
@@ -28,30 +43,30 @@ impl Color {
     }
 }
 
-#[derive(Debug)]
-pub enum PackType {
+#[derive(Debug, Clone, Copy)]
+pub enum Suit {
     Spades,
     Clubs,
     Hearts,
     Diamonds,
 }
 
-impl PackType {
+impl Suit {
     pub fn get_colour(&self) -> Color {
         match &self {
-            PackType::Spades | PackType::Clubs => Color::Black,
-            PackType::Hearts | PackType::Diamonds => Color::Red,
+            Suit::Spades | Suit::Clubs => Color::Black,
+            Suit::Hearts | Suit::Diamonds => Color::Red,
         }
     }
 
-    pub fn is_opposing_color(&self, other: &PackType) -> bool {
+    pub fn is_opposing_color(&self, other: &Suit) -> bool {
         self.get_colour() != other.get_colour()
     }
 
-    pub fn get_opposing_pack_types(&self) -> (PackType, PackType) {
+    pub fn get_opposing_suits(&self) -> (Suit, Suit) {
         match self.get_colour() {
-            Color::Red => (PackType::Spades, PackType::Clubs),
-            Color::Black => (PackType::Hearts, PackType::Diamonds),
+            Color::Red => (Suit::Spades, Suit::Clubs),
+            Color::Black => (Suit::Hearts, Suit::Diamonds),
         }
     }
 }
@@ -59,32 +74,37 @@ impl PackType {
 
 
 
-pub struct Pack(PackType, [char; 14]);
+struct Pack(Suit, [char; 14]);
 
 impl Pack {
-    fn from(pack_type: PackType) -> &'static Self {
+    fn get(pack_type: &Suit) -> &'static Self {
         match pack_type {
-            PackType::Spades => &SPADES,
-            PackType::Clubs => &CLUBS,
-            PackType::Hearts => &HEARTS,
-            PackType::Diamonds => &DIAMONDS,
+            Suit::Spades => &SPADES,
+            Suit::Clubs => &CLUBS,
+            Suit::Hearts => &HEARTS,
+            Suit::Diamonds => &DIAMONDS,
         }
     }
 }
 
 
 pub const SPADES: Pack
-    = Pack(PackType::Spades, [ '🂡', '🂢', '🂣', '🂤', '🂥', '🂦', '🂧', '🂨', '🂩', '🂪', '🂫', '🂬', '🂭', '🂮', ]);
+    = Pack(Suit::Spades, [ '🂡', '🂢', '🂣', '🂤', '🂥', '🂦', '🂧', '🂨', '🂩', '🂪', '🂫', '🂬', '🂭', '🂮', ]);
 
 pub const CLUBS: Pack
-    = Pack(PackType::Clubs, [ '🃑', '🃒', '🃓', '🃔', '🃕', '🃖', '🃗', '🃘', '🃙', '🃚', '🃛', '🃜', '🃝', '🃞', ]);
+    = Pack(Suit::Clubs, [ '🃑', '🃒', '🃓', '🃔', '🃕', '🃖', '🃗', '🃘', '🃙', '🃚', '🃛', '🃜', '🃝', '🃞', ]);
 
 pub const HEARTS: Pack
-    = Pack(PackType::Hearts, [ '🂱', '🂲', '🂳', '🂴', '🂵', '🂶', '🂷', '🂸', '🂹', '🂺', '🂻', '🂼', '🂽', '🂾', ]);
+    = Pack(Suit::Hearts, [ '🂱', '🂲', '🂳', '🂴', '🂵', '🂶', '🂷', '🂸', '🂹', '🂺', '🂻', '🂼', '🂽', '🂾', ]);
 
 pub const DIAMONDS: Pack
-    = Pack(PackType::Diamonds, [ '🃁', '🃂', '🃃', '🃄', '🃅', '🃆', '🃇', '🃈', '🃉', '🃊', '🃋', '🃌', '🃍', '🃎', ]);
+    = Pack(Suit::Diamonds, [ '🃁', '🃂', '🃃', '🃄', '🃅', '🃆', '🃇', '🃈', '🃉', '🃊', '🃋', '🃌', '🃍', '🃎', ]);
 
+impl Pack {
+    fn get_card_char(&self, value: usize) -> char {
+        self.1[value]
+    }
+}
 
 impl std::fmt::Debug for Pack {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -96,92 +116,109 @@ impl std::fmt::Debug for Pack {
 
 
 
-#[derive(Debug, Clone)]
-pub struct FuzzyCard {
+#[derive(Clone)]
+pub struct ProximateCard {
     pub color: Color,
-    pub value: Value,
+    pub rank: Rank,
+}
+
+impl ProximateCard {
+    pub fn matches(&self, card: &Card) -> bool {
+        card.get_color() == self.color
+            && card.get_value() == self.rank
+    }
+}
+
+impl std::fmt::Debug for ProximateCard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("ProximateCard(A {:?} {:?})", self.color, self.rank))
+    }
 }
 
 #[derive(Clone)]
-pub struct Card<'a>(Value, &'a Pack);
+pub struct Card(Rank, Suit);
 
-impl<'a> std::fmt::Debug for Card<'a> {
+impl std::fmt::Debug for Card {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("Card")
-            .field(&self.0.0)
-            .field(&self.1.0)
-            .finish()
+        f.write_fmt(format_args!("Card({} of {:?})", self.0.0, self.1))
     }
 }
 
-impl<'data> Card<'data> {
-    pub fn new(value: usize, pack: &'data Pack) -> Self {
-        Self(Value(value), pack)
+impl<'data> Card {
+    pub fn new(rank: usize, suit: Suit) -> Self {
+        Self(Rank(rank), suit)
     }
 
     pub fn get_color(&self) -> Color {
-        self.1.0.get_colour()
+        self.1.get_colour()
     }
 
-    pub fn get_value(&self) -> Value {
+    pub fn get_value(&self) -> Rank {
         self.0
     }
 
-    pub fn is_same_pack(&self, other: &Card<'data>) -> bool {
+    pub fn get_char(&self) -> char {
+        Pack::get(&self.1)
+            .get_card_char(self.0.0)
+    }
+
+    pub fn is_same_pack(&self, other: &Card) -> bool {
         let Card(_, s_pack) = self;
         let Card(_, o_pack) = other;
 
         std::ptr::eq(s_pack, o_pack)
     }
 
-    pub fn is_complementary_pack(&self, other: &Card<'data>) -> bool {
-        let Card(_, Pack(s_type, _)) = self;
-        let Card(_, Pack(o_type, _)) = other;
+    pub fn is_complementary_pack(&self, other: &Card) -> bool {
+        let Card(_, s_type) = self;
+        let Card(_, o_type) = other;
 
         s_type.is_opposing_color(o_type)
     }
 
-    pub fn is_playable_pair_smaller(&self, other: &Card<'data>) -> bool {
-        let Card(s_value, _) = *self;
-        let Card(o_value, _) = *other;
+    pub fn is_playable_pair_smaller(&self, other: &Card) -> bool {
+        let Card(s_rank, _) = *self;
+        let Card(o_rank, _) = *other;
 
-        s_value.0 + 1 == o_value.0
+        s_rank.0 + 1 == o_rank.0
     }
 
-    pub fn is_playable_pair_bigger(&self, other: &Card<'data>) -> bool {
-        let Card(s_value, _) = *self;
-        let Card(o_value, _) = *other;
+    pub fn is_playable_pair_bigger(&self, other: &Card) -> bool {
+        let Card(s_rank, _) = *self;
+        let Card(o_rank, _) = *other;
 
-        o_value.0 + 1 == s_value.0
+        o_rank.0 + 1 == s_rank.0
     }
 
-    pub fn get_parent_data(&self) -> Option<FuzzyCard> {
+    pub fn matches_prox_card(&self, prox_card: &ProximateCard) -> bool {
+        self.get_color() == prox_card.color
+            && self.get_value() == prox_card.rank
+    }
+
+    pub fn get_parent_data(&self) -> Option<ProximateCard> {
         (self.0.0 < KING)
-            .then(|| FuzzyCard { color: self.get_color().get_opposing_color(), value: Value(self.0.0 + 1) })
+            .then(|| ProximateCard { color: self.get_color().get_opposing_color(), rank: Rank(self.0.0 + 1) })
     }
 
-    pub fn get_parents(&self) -> Option<(Card<'data>, Card<'data>)> {
-        let Card(value, Pack(pack_type, _)) = *self;
+    pub fn get_parents(&self) -> Option<(Card, Card)> {
+        let Card(rank, suit) = self;
 
-        (value.0 < KING)
+        (rank.0 < KING)
             .then(|| {
-                let (fst_pack_type, snd_pack_type) = pack_type.get_opposing_pack_types();
-                let fst_pack = Pack::from(fst_pack_type);
-                let snd_pack = Pack::from(snd_pack_type);
+                let (fst_suit, snd_suit) = suit.get_opposing_suits();
+                let parent_value = Rank(rank.0 + 1);
 
-                let parent_value = Value(value.0 + 1);
-
-                (Card(parent_value, fst_pack), Card(parent_value, snd_pack))
+                (Card(parent_value, fst_suit), Card(parent_value, snd_suit))
             })
     }
 }
 
-pub type RawCard<'a> = (usize, &'a Pack);
+pub type RawCard = (usize, Suit);
 
-impl<'a> std::fmt::Display for Card<'a> {
+impl<'a> std::fmt::Display for Card {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Card(value, Pack(_, pack)) = *self;
+        let Card(rank, suit) = self;
 
-        f.write_fmt(format_args!("{}", pack[value.0 - 1]))
+        f.write_fmt(format_args!("{}", Pack::get(&suit).get_card_char(rank.0 - 1)))
     }
 }

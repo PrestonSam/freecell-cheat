@@ -1,139 +1,63 @@
-use std::fmt::Write;
+use crate::utils::{TernaryVal, ThruplePartitionMap};
 
-use super::{card::{Card, FuzzyCard, RawCard}, error::GameError, stacks::{Column, ColumnDepth, EquivalentPairColumnDepths, Foundation, FoundationDepth, FoundationPosition, Reserve, ReservePosition, MAX_NUMBER_OF_CARDS_IN_COLUMN}};
-
-const NUMBER_OF_COLUMNS_IN_TABLEAU: usize = 8;
-
-#[derive(Debug, Clone, Copy)]
-pub struct TableauPosition(usize);
-
-pub struct Tableau<'data>([Column<'data>; NUMBER_OF_COLUMNS_IN_TABLEAU]);
-
-impl<'data> Tableau<'data> {
-    pub fn new(columns: [Column<'data>; NUMBER_OF_COLUMNS_IN_TABLEAU]) -> Self {
-        Self(columns)
+use super::{
+    card::{Card, RawCard},
+    card_depots::{
+        FindProxPair, Foundation, FoundationCardLocation, Reserve, ReserveCardLocation,
+        Tableau, TableauCardLocation, NUMBER_OF_COLUMNS_IN_TABLEAU
     }
+};
 
-    pub fn at(&mut self, column: &TableauPosition) -> Result<&mut Column<'data>, GameError> {
-        self.0
-            .get_mut(column.0)
-            .ok_or_else(|| GameError::NoSuchColumn(column.0))
-    }
 
-    fn find_equivalent_pair(&self, f_card: &FuzzyCard) -> Option<EquivalentPairLocations> {
-        self.0
-            .iter()
-            .enumerate()
-            .find_map(|(tableau_position, column)| {
-                let pair_depths = match column.find_equivalent_pair(f_card)? {
-                    EquivalentPairColumnDepths::Two(fst_depth, snd_depth) =>
-                        EquivalentPairLocations::Two(
-                            CardLocation::Tableau { position: TableauPosition(tableau_position), depth: fst_depth },
-                            CardLocation::Tableau { position: TableauPosition(tableau_position), depth: snd_depth }),
-                    
-                    EquivalentPairColumnDepths::One(depth) =>
-                        EquivalentPairLocations::One(
-                            CardLocation::Tableau { position: TableauPosition(tableau_position), depth }),
-                };
-                
-                Some(pair_depths)
-            })
-    }
+#[derive(Debug)]
+pub enum ParentLocations {
+    HasParents(CardLocation, CardLocation),
+    King,
 }
 
-impl<'a> From<[Vec<RawCard<'a>>; NUMBER_OF_COLUMNS_IN_TABLEAU]> for Tableau<'a> {
-    fn from(raw_columns: [Vec<RawCard<'a>>; NUMBER_OF_COLUMNS_IN_TABLEAU]) -> Self {
-        Self(raw_columns.map(Column::new))
-    }
-}
+impl ParentLocations {
+    pub fn min_distance(&self) -> Option<usize> {
+        match self {
+            ParentLocations::HasParents(p0, p1) =>
+                Some(p0.get_distance().min(p1.get_distance())),
 
-impl std::fmt::Display for Tableau<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Tableau(columns) = self;
-
-        for row in 0..MAX_NUMBER_OF_CARDS_IN_COLUMN {
-            let mut something_written = false;
-            f.write_str(" ")?;
-
-            for stack in columns.iter() {
-                if let Some(card) = stack.get_card(row) {
-                    something_written = true;
-
-                    f.write_fmt(format_args!("{card} "))?;
-                } else {
-                    f.write_str("  ")?;
-                }
-            }
-
-            if !something_written {
-                return Ok(());
-            }
-            
-            f.write_char('\n')?;
+            ParentLocations::King =>
+                None,
         }
-
-        Ok(())
     }
 }
 
-// Build an index of all the cards
-// Should probably just be a set of two arrays
-// One for red cards, the other black.
-// The cards should be stored in pairs, based on their value.
-// Thus, each array should contain 28 cards, for at total of 54. Ace has a value of 0, while jack has 11, queen 12 and king 13
-// Each entry of the array should be a struct containing the card, the index of the column in which the card is stored and a reference to the column itself
-// To get the references right without using mutation the order should be as follows:
-// Cards (already constructed in the parameters)
-// Columns (immutable references to cards without destructuring parameter)
-// Index (reference to the columns, their positions in the tableau and ownership of the cards)
-
-// Hold up you've forgotten about the reserve and the foundation
-// Agh
-// Alrighty enums I guess
-// #[derive(Debug)]
-
-
-
-enum EquivalentPairLocations {
-    One(CardLocation),
-    Two(CardLocation, CardLocation),
+#[derive(Debug, PartialEq, Eq)]
+pub enum CardLocation {
+    Reserve(ReserveCardLocation),
+    Foundation(FoundationCardLocation),
+    Tableau(TableauCardLocation),
 }
 
-enum CardLocation {
-    Reserve { position: ReservePosition }, // Thinking about it, permanent references to the reserve etc are going to influence how we can make references later. Better to store the index only
-    Foundation { position: FoundationPosition , depth: FoundationDepth},
-    Tableau { position: TableauPosition, depth: ColumnDepth },
+impl CardLocation {
+    pub fn get_distance(&self) -> usize {
+        match self {
+            CardLocation::Reserve(_) => 0,
+            CardLocation::Foundation(foundation_card_location) => foundation_card_location.get_distance(),
+            CardLocation::Tableau(tableau_card_location) => tableau_card_location.get_distance(),
+        }
+    }
 }
 
-// #[derive(Debug)]
-// struct CardIndex {
-//     clubs: [PlacedCard; NUMBER_OF_CARDS_IN_PACK],
-//     spades: [PlacedCard; NUMBER_OF_CARDS_IN_PACK],
-//     hearts: [PlacedCard; NUMBER_OF_CARDS_IN_PACK],
-//     diamonds: [PlacedCard; NUMBER_OF_CARDS_IN_PACK],
-// }
-
-// impl CardIndex {
-//     // You 100% on the index idea?
-//     // You'll have to make sure that the index is continually updated
-//     // Then, on the other hand, it'll just be swaps won't it
-//     // If you move a stack it's quite a number of updates...
-//     // Although it's a headache, it seems more efficient than searching through the entire game every time.
-//     // Although that's true, I don't think that the effect is as pronounced as you claim.
-//     // Your computer is obviously going to chew through that work as though it's nothing.
-//     // Alright for the time being we'll use a search with no index, then, as it'll get me to a v1 sooner.
-//     fn find_parents<'data>(child: &Card<'data>) -> (PlacedCard, PlacedCard) {
-//         todo!()
-//     }
-// }
-
-pub struct Game<'data> {
-    tableau: Tableau<'data>,
-    reserve: Reserve<'data>,
-    foundation: Foundation<'data>,
+impl PartialOrd for CardLocation {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.get_distance()
+            .partial_cmp(&other.get_distance())
+    }
 }
 
-fn get_mut_refs<'a, T>(arr: &'a mut [T], fst_idx: usize, snd_idx: usize) -> Option<(&'a mut T, &'a mut T)> {
+pub struct Game {
+    tableau: Tableau,
+    reserve: Reserve,
+    foundation: Foundation,
+}
+
+fn get_mut_refs<T>(arr: &mut [T], fst_idx: usize, snd_idx: usize) -> Option<(&mut T, &mut T)> {
     let fst_pick_idx = fst_idx + 1;
     if arr.len() < fst_pick_idx { return None; }
 
@@ -147,30 +71,67 @@ fn get_mut_refs<'a, T>(arr: &'a mut [T], fst_idx: usize, snd_idx: usize) -> Opti
     Some((fst_val, snd_val))
 }
 
-impl<'data> Game<'data> {
-    pub fn new(raw_columns: [Vec<RawCard<'data>>; NUMBER_OF_COLUMNS_IN_TABLEAU]) -> Self {
+impl Game {
+    pub fn new(raw_columns: [Vec<RawCard>; NUMBER_OF_COLUMNS_IN_TABLEAU]) -> Self {
         Self {
             tableau: Tableau::from(raw_columns),
             reserve: Reserve::new(), 
             foundation: Foundation::new()
         }
     }
+    
+    pub fn find_parents_for_bottom_cards(&self) -> Vec<(&Card, ParentLocations)> {
+        self.tableau
+            .bottom_cards()
+            .iter()
+            .map(|card| (*card, self.find_parents(card)))
+            .collect()
+    }
 
-    fn find_parents(&self, card: &Card<'data>) -> Option<CardLocation> {
-        let f_card = card.get_parent_data()?;
-        
-        // TODO move "Color, Value" into a descriptive struct
-        let maybe_card_locations_in_tableau = self.tableau.find_equivalent_pair(&f_card);
-        let maybe_card_locations_in_foundation = self.foundation.find_equivalent_pair(&f_card);
-        let maybe_card_locations_in_reserve = self.reserve.find_equivalent_pair(&f_card);
+    // Produces None if is King (might be worth explicitly encoding that into the model)
+    fn find_parents(&self, card: &Card) -> ParentLocations {
+        let prox_card = match card.get_parent_data() {
+            Some(prox_card) => prox_card,
+            None => return ParentLocations::King,
+        };
 
-        todo!()
+        let tableau_parents = self.tableau.find_prox_pair(&prox_card);
+        let foundation_parents = self.foundation.find_prox_pair(&prox_card);
+        let reserve_parents = self.reserve.find_prox_pair(&prox_card);
+
+        let mut locations_iter = tableau_parents.into_iter().map(CardLocation::Tableau)
+            .chain(foundation_parents.into_iter().map(CardLocation::Foundation))
+            .chain(reserve_parents.into_iter().map(CardLocation::Reserve));
+
+        match (locations_iter.next(), locations_iter.next()) {
+            (Some(fst), Some(snd)) =>
+                ParentLocations::HasParents(fst, snd),
+
+            locations =>
+                panic!("Unable to find two cards matching proximate card {prox_card:?}\nInstead found {locations:?}"),
+        }
+    }
+
+    pub fn show_cards(&self, card_locations: &[&CardLocation]) {
+        let (reserve_card_locations, foundation_card_locations, tableau_card_locations): (Vec<_>, Vec<_>, Vec<_>) = card_locations.into_iter()
+            .thruple_partition_map(|v| match v {
+                CardLocation::Reserve(reserve_card_location) => TernaryVal::Left(reserve_card_location),
+                CardLocation::Foundation(foundation_card_location) => TernaryVal::Middle(foundation_card_location),
+                CardLocation::Tableau(tableau_card_location) => TernaryVal::Right(tableau_card_location),
+            });
+
+        self.reserve.show_cards(reserve_card_locations);
+        print!("  ");
+        self.foundation.show_cards(foundation_card_locations);
+        println!("\n");
+        self.tableau.show_cards(tableau_card_locations);
     }
 }
 
-impl<'a> std::fmt::Display for Game<'a> {
+impl<'a> std::fmt::Display for Game {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let Game { tableau, reserve, foundation } = self;
-        f.write_fmt(format_args!("{}  {}\n\n{}", reserve, foundation, tableau))
+
+        f.write_fmt(format_args!("{reserve}  {foundation}\n\n{tableau}"))
     }
 }

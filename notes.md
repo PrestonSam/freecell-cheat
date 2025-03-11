@@ -42,11 +42,29 @@ Alright
 
 
 ## TODO
-
-Use pointers to the cards rather than storing them.  
-I don't exactly know how it'll be done maybe I should use an Rc.  
-We'll get there...
-I need to add rules for what's valid to put where
-I realise the rules are different in each case FreeCell is a lot more complex than I really considered it to be
+Rank value of potential moves, compare them
 
 ## Bugs
+PickableCard & PickableStack are pretty cool, but the types don't actually encode any information about where they're used - which column, what gamestate etc.
+Because of this, you could generate a bunch of PickableStacks and then use them in the wrong places.
+I might be able to use composition to solve this, but I have to figure that out.
+
+
+
+
+## Planning
+
+I could probably post the pick _into the column_ or so on to receive a chosen pick.
+Although that's true, I wouldn't trust the pick, so I'd have to verify it a second time.
+Although that's not ideal, it's not _awful_ either. It might be worth using this approach just so that I can at least have fully verified moves.
+Even though there's a double verify.
+
+The trouble I'm having is that the relationship involves _two_ entities.
+That's where it's confusing.
+
+I think my current exchange is pretty decent, but I still want to tighten it...
+I think I need to blunder on with my current model, for the time being.
+
+
+Alright we're onto scoring.
+I need to determine 

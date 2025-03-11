@@ -1,7 +1,7 @@
 mod error;
 mod card;
-mod stacks;
+mod card_depots;
 mod game;
 
-pub use card::{CLUBS, DIAMONDS, SPADES, HEARTS, ACE, JACK, QUEEN, KING};
-pub use game::Game;
+pub use card::{ACE, JACK, QUEEN, KING, Card, Suit};
+pub use game::{Game, ParentLocations, CardLocation};
