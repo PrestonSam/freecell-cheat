@@ -3,8 +3,7 @@ use std::fmt::Write;
 use itertools::Itertools;
 
 use crate::{model::{card::{Card, ProximateCard, BLANK_CARD_CHAR, CARD_BACK_CHAR}, error::GameError}, utils::Ternary};
-use super::{commons::{HoldsCard, PickableCard}, FindProxPair};
-
+use super::{pickables::{HoldsCard, PickableCard}, FindProxPair};
 
 
 #[derive(Debug, Default)]

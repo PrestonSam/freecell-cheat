@@ -88,16 +88,16 @@ impl Pack {
 }
 
 
-pub const SPADES: Pack
+const SPADES: Pack
     = Pack(Suit::Spades, [ '🂡', '🂢', '🂣', '🂤', '🂥', '🂦', '🂧', '🂨', '🂩', '🂪', '🂫', '🂬', '🂭', '🂮', ]);
 
-pub const CLUBS: Pack
+const CLUBS: Pack
     = Pack(Suit::Clubs, [ '🃑', '🃒', '🃓', '🃔', '🃕', '🃖', '🃗', '🃘', '🃙', '🃚', '🃛', '🃜', '🃝', '🃞', ]);
 
-pub const HEARTS: Pack
+const HEARTS: Pack
     = Pack(Suit::Hearts, [ '🂱', '🂲', '🂳', '🂴', '🂵', '🂶', '🂷', '🂸', '🂹', '🂺', '🂻', '🂼', '🂽', '🂾', ]);
 
-pub const DIAMONDS: Pack
+const DIAMONDS: Pack
     = Pack(Suit::Diamonds, [ '🃁', '🃂', '🃃', '🃄', '🃅', '🃆', '🃇', '🃈', '🃉', '🃊', '🃋', '🃌', '🃍', '🃎', ]);
 
 impl Pack {

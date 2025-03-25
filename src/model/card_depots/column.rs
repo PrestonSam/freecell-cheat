@@ -4,15 +4,29 @@ use itertools::Itertools;
 
 use crate::{model::{card::{Card, ProximateCard, RawCard, NUMBER_OF_CARDS_IN_PACK}, error::GameError}, utils::Ternary};
 
-use super::{commons::{HoldsCard, HoldsStack, PickableCard, PickableStack}, FindProxPair};
+use super::{pickables::{HoldsCard, HoldsStack, PickableCard, PickableStack}, FindProxPair};
 
 
 
 pub const MAX_NUMBER_OF_CARDS_IN_COLUMN: usize = NUMBER_OF_CARDS_IN_PACK * 2;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StateToken(usize);
+
+impl StateToken {
+    fn new() -> Self {
+        Self(0)
+    }
+
+    fn into_next(self) -> Self {
+        Self(self.0 + 1)
+    }
+}
+
 #[derive(Debug)]
 pub struct Column {
     cards: Vec<Card>,
+    state_token: StateToken,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord)]
@@ -36,14 +50,17 @@ impl<'data> Column {
         let mut cards_vec = Vec::with_capacity(MAX_NUMBER_OF_CARDS_IN_COLUMN);
         cards_vec.splice(.., cards_iter);
 
-        Self { cards: cards_vec }
+        Self {
+            cards: cards_vec,
+            state_token: StateToken::new()
+        }
     }
 
     pub fn iter(&self) -> Iter<'_, Card>{
         self.cards.iter()
     }
 
-    pub fn get_largest_stack_pick(&self) -> Option<PickableStack> {
+    pub fn get_largest_stack_pick(&self) -> Option<PickableStack<StateToken>> {
         (1..=self.len())
             .map_while(|n| self.can_pick_stack(n))
             .last()
@@ -93,15 +110,16 @@ impl HoldsCard for Column {
     }
 }
 
-impl HoldsStack for Column {
-    fn can_pick_stack(&self, pick_size: usize) -> Option<PickableStack> {
+impl HoldsStack<StateToken> for Column {
+    fn can_pick_stack(&self, pick_size: usize) -> Option<PickableStack<StateToken>> {
         if self.cards.len() < pick_size { return None; }
 
         if pick_size == 1  {
             return self.cards.last()
                 .map(|last| PickableStack {
                     deepest_card: last.clone(),
-                    size: pick_size
+                    size: pick_size,
+                    state_token: self.state_token
                 })
         }
 
@@ -112,17 +130,21 @@ impl HoldsStack for Column {
             .tuple_windows()
             .map(|(child, parent)| Self::is_playable_pair(parent, child).then_some(child))
             .reduce(|prev, cur| { prev.and(cur) })?
-            .map(|last| PickableStack { deepest_card: last.clone(), size: pick_size })
+            .map(|last| PickableStack {
+                deepest_card: last.clone(),
+                size: pick_size,
+                state_token: self.state_token,
+            })
     }
     
-    fn can_put_stack(&self, picked_stack: &PickableStack) -> bool {
+    fn can_put_stack(&self, picked_stack: &PickableStack<StateToken>) -> bool {
         self.cards
             .iter()
             .last()
             .is_none_or(|last_card| Self::is_playable_pair(last_card, &picked_stack.deepest_card))
     }
 
-    fn pick_stack(&mut self, pick: PickableStack) -> Result<Vec<Card>, GameError> {
+    fn pick_stack(&mut self, pick: PickableStack<StateToken>) -> Result<Vec<Card>, GameError> {
         let card_count = self.cards.len();
 
         if card_count < pick.size {
@@ -132,7 +154,7 @@ impl HoldsStack for Column {
         Ok(self.cards.split_off(card_count - pick.size))
     }
 
-    fn take_stack_from<T: HoldsStack>(&mut self, from: &mut T, pick: PickableStack) -> Result<(), GameError> {
+    fn take_stack_from<T: HoldsStack<StateToken>>(&mut self, from: &mut T, pick: PickableStack<StateToken>) -> Result<(), GameError> {
         let mut picked = from.pick_stack(pick)?;
 
         self.cards.append(&mut picked);

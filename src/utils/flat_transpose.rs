@@ -1,34 +1,60 @@
 use std::ops::DerefMut;
 
-pub struct FlatTransposed<'a, C, I, T>
+pub struct FlatTransposed<C, I, T>
 where
     C: DerefMut<Target = [I]>,
     I: Iterator<Item = T>,
 {
-    container: &'a mut C,
+    container: C,
     index: usize,
     child_had_next: bool,
 }
 
-impl<'a, C, I, T> FlatTransposed<'a, C, I, T>
+impl<C, I, T> FlatTransposed<C, I, T>
 where
     C: DerefMut<Target = [I]>,
     I: Iterator<Item = T>
 {
-    fn new(container: &'a mut C) -> Self {
+    fn new(container: C) -> Self {
         Self { container, index: 0, child_had_next: false }
     }
 }
 
-pub trait FlatTranspose<'a, C, I, T> {
-    fn flat_transpose(&'a mut self) -> FlatTransposed<'a, C, I, T>
+pub trait FlatTranspose<C, I, T> {
+    /// Cycle through each child iterator, emitting the next value from each.
+    /// Continue to cycle until every child iterator produces None.
+    ///
+    /// The item for this iterator is `Option<T>`, meaning the outputted values are `Option<Option<T>>`
+    /// This is because some of the child iterators are expected to finish earlier than others.
+    /// This iterator only produces `None` if every child iterator produces None.
+    /// ```
+    /// let input = vec![
+    ///     vec![ 'T', 'i', 't', 't', 't', 'a'],
+    ///     vec![ 'r', 't', 'h', 'e', 'e', 't'],
+    ///     vec![ 'a', 'i', 'o', 'r', ' ', 'i'],
+    ///     vec![ 'n', 'o', 'u', 'm', 'a', 'o'],
+    ///     vec![ 's', 'n', 't', 'e', 'l', 'n'],
+    ///     vec![ 'p', ' ', ' ', 'd', 'l', 's'],
+    ///     vec![ 'o', 'w', 'i', 'i', 'o', '!'],
+    ///     vec![ 's', 'i', 'n', 'a', 'c']
+    /// ];
+    ///
+    /// let str: String = input.iter()
+    ///     .map(|v| v.iter())
+    ///     .flat_transpose()
+    ///     .filter_map(|v| v)
+    ///     .collect();
+    ///
+    /// println!("{str}"); // Prints "Transposition without intermediate allocations!"
+    /// ```
+    fn flat_transpose(self) -> FlatTransposed<C, I, T>
     where
         Self: Sized,
         C: DerefMut<Target = [I]>,
         I: Iterator<Item = T>;
 }
 
-impl<'a, C, I, T> Iterator for FlatTransposed<'a, C, I, T>
+impl<C, I, T> Iterator for FlatTransposed<C, I, T>
 where 
     Self: Sized,
     C: DerefMut<Target = [I]>,
@@ -57,16 +83,20 @@ where
     }
 }
 
-impl<'a, C, I, T> FlatTranspose<'a, C, I, T> for C
+impl<I, SI, T> FlatTranspose<Vec<SI>, SI, T> for I
 where
-    C: DerefMut<Target = [I]>,
-    I: Iterator<Item = T>,
+    I: Iterator<Item = SI>,
+    SI: Iterator<Item = T>,
 {
-    /// Sequence ends after every child sequence in row produces None.
-    fn flat_transpose(&'a mut self) -> FlatTransposed<'a, C, I, T> {
-        FlatTransposed::new(self)
+    fn flat_transpose(self) -> FlatTransposed<Vec<SI>, SI, T>
+    where
+        Self: Sized,
+        SI: Iterator<Item = T>
+    {
+        FlatTransposed::new(self.collect())
     }
 }
+
 
 #[test]
 pub fn flat_transpose_iterates_until_all_columns_exhausted() {
@@ -84,9 +114,8 @@ pub fn flat_transpose_iterates_until_all_columns_exhausted() {
         vec![ None,       Some(&'!'), None       ],
     ];
 
-    let mut slice = input.iter()
-        .map(|v| v.iter())
-        .collect::<Box<[_]>>();
+    let slice = input.iter()
+        .map(|v| v.iter());
 
     for (found, expected) in slice.flat_transpose().zip(expected_output.into_iter().flatten()) {
         assert!(found == expected)
@@ -113,9 +142,8 @@ pub fn flat_transpose_iterates_when_some_columns_are_blank() {
         vec![ None, None,     Some(&12), None, None, None, ],
     ];
 
-    let mut slice = input.iter()
-        .map(|v| v.iter())
-        .collect::<Box<[_]>>();
+    let slice = input.iter()
+        .map(|v| v.iter());
     
     for (found, expected) in slice.flat_transpose().zip(expected_output.into_iter().flatten()) {
         assert!(found == expected, "{found:?} is not {expected:?}")

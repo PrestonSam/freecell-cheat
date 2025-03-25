@@ -1,10 +1,10 @@
-mod commons;
+mod pickables;
 mod column;
 mod foundation;
 mod reserve;
 mod tableau;
 
-pub use commons::FindProxPair;
+pub use pickables::FindProxPair;
 pub use column::{Column, ColumnDepth};
 pub use foundation::{Foundation, FoundationCardLocation, FoundationDepth, FoundationPosition};
 pub use reserve::{Reserve, ReserveCardLocation, ReservePosition};

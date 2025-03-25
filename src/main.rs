@@ -20,7 +20,8 @@ fn main() {
 
     println!("GAME\n{game}\nGAME\n\n");
 
-    let sorted_cards_and_parents = game.find_parents_for_bottom_cards()
+    let sorted_cards_and_parents = game
+        .find_parents_for_bottom_cards()
         .into_iter()
         .sorted_by_key(|(_ ,parents)| parents.min_distance());
 

@@ -4,7 +4,7 @@ use crate::{
     model::{card::{Card, ProximateCard, RawCard, CARD_BACK_CHAR}, CardLocation},
     utils::{FlatTranspose, Ternary}
 };
-use super::{commons::FindProxPair, Column, ColumnDepth};
+use super::{column::StateToken, pickables::{FindProxPair, PickableStack}, Column, ColumnDepth};
 
 
 pub const NUMBER_OF_COLUMNS_IN_TABLEAU: usize = 8;
@@ -60,7 +60,10 @@ impl Tableau {
             .collect()
     }
     
-    pub fn get_valid_picks(&self) -> Vec<CardLocation> {
+    pub fn get_valid_picks(&self) -> Vec<PickableStack<StateToken>> {
+        self.0.iter()
+            .filter_map(|c| c.get_largest_stack_pick().map(|p| (c, p)))
+            .collect_vec();
         todo!()
     }
 
@@ -68,12 +71,9 @@ impl Tableau {
         // Need to condense the positions
         // Might be worth insisting in the model that such positions are nested
         // Which is probably for the best anyway, as that's how they're procured to begin with
-        let mut col_iters = self.0
+        let grid_iter = self.0
             .iter()
             .map(|col| col.iter())
-            .collect::<Box<[_]>>();
-
-        let grid_iter = col_iters
             .flat_transpose()
             .chunks(self.0.len());
 
@@ -123,12 +123,9 @@ impl<'a> From<[Vec<RawCard>; NUMBER_OF_COLUMNS_IN_TABLEAU]> for Tableau {
 
 impl std::fmt::Display for Tableau {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut col_iters = self.0
+        let nested_iter = self.0
             .iter()
             .map(|col| col.iter())
-            .collect_vec();
-
-        let nested_iter = col_iters
             .flat_transpose()
             .chunks(self.0.len());
 
