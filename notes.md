@@ -42,14 +42,14 @@ Alright
 
 
 ## TODO
-Rank value of potential moves, compare them
+Rank value of potential moves, compare them.
+
+Let's just clone the game for the time being.
+I'm planning to use a `Cons` model for the plan in future, but I need to get there first, so let's mutate the game.
+
 
 ## Bugs
-PickableCard & PickableStack are pretty cool, but the types don't actually encode any information about where they're used - which column, what gamestate etc.
-Because of this, you could generate a bunch of PickableStacks and then use them in the wrong places.
-I might be able to use composition to solve this, but I have to figure that out.
-
-
+None documented at present
 
 
 ## Planning

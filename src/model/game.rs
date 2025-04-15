@@ -1,11 +1,12 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::utils::{TernaryVal, ThruplePartitionMap};
 
 use super::{
     card::{Card, RawCard},
     card_depots::{
-        FindProxPair, Foundation, FoundationCardLocation, Reserve, ReserveCardLocation,
-        Tableau, TableauCardLocation, NUMBER_OF_COLUMNS_IN_TABLEAU
-    }
+        CardMove, FindProxPair, Foundation, FoundationCardLocation, HoldsCard, PickableCard, PickableStack, Reserve, ReserveCardLocation, Tableau, TableauCardLocation, NUMBER_OF_COLUMNS_IN_TABLEAU
+    }, error::GameError
 };
 
 
@@ -27,7 +28,7 @@ impl ParentLocations {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum CardLocation {
     Reserve(ReserveCardLocation),
     Foundation(FoundationCardLocation),
@@ -44,10 +45,16 @@ impl CardLocation {
     }
 }
 
+impl Ord for CardLocation {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.get_distance()
+            .cmp(&other.get_distance())
+    }
+}
+
 impl PartialOrd for CardLocation {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.get_distance()
-            .partial_cmp(&other.get_distance())
+        Some(self.cmp(other))
     }
 }
 
@@ -80,11 +87,14 @@ impl Game {
         }
     }
     
-    pub fn find_parents_for_bottom_cards(&self) -> Vec<(&Card, ParentLocations)> {
-        self.tableau
-            .bottom_cards()
-            .iter()
-            .map(|card| (*card, self.find_parents(card)))
+    pub fn find_parents_for_top_cards(&self) -> Vec<(Card, ParentLocations)> {
+        self.tableau.top_cards()
+            .into_iter()
+            .map(|card| {
+                let parents = self.find_parents(&card);
+
+                (card, parents)
+            })
             .collect()
     }
 
@@ -112,19 +122,49 @@ impl Game {
         }
     }
 
-    pub fn show_cards(&self, card_locations: &[&CardLocation]) {
-        let (reserve_card_locations, foundation_card_locations, tableau_card_locations): (Vec<_>, Vec<_>, Vec<_>) = card_locations.into_iter()
-            .thruple_partition_map(|v| match v {
-                CardLocation::Reserve(reserve_card_location) => TernaryVal::Left(reserve_card_location),
-                CardLocation::Foundation(foundation_card_location) => TernaryVal::Middle(foundation_card_location),
-                CardLocation::Tableau(tableau_card_location) => TernaryVal::Right(tableau_card_location),
-            });
+    pub fn show_cards<'a>(&'a self, card_locations: &'a[&'a CardLocation]) -> GameShownCards<'a> {
+        GameShownCards(self, card_locations)
+    }
 
-        self.reserve.show_cards(reserve_card_locations);
-        print!("  ");
-        self.foundation.show_cards(foundation_card_locations);
-        println!("\n");
-        self.tableau.show_cards(tableau_card_locations);
+    pub fn get_valid_stack_picks(&self) -> Vec<PickableStack> {
+        self.tableau.get_valid_stack_picks()
+    }
+
+    pub fn get_valid_card_picks(&self) -> Vec<PickableCard> {
+        let mut out = self.reserve.get_valid_card_picks();
+        out.append(&mut self.foundation.get_valid_card_picks());
+        out.append(&mut self.tableau.get_valid_card_picks());
+        out
+    }
+
+    pub fn get_valid_card_puts(&self, pick: &PickableCard) -> Vec<CardMove> {
+        let mut out = self.reserve.get_valid_card_puts(&pick);
+        out.append(&mut self.foundation.get_valid_card_puts(&pick));
+        out.append(&mut self.tableau.get_valid_card_puts(&pick));
+        out
+    }
+
+    fn get_card_holder(&self, location: &CardLocation) -> Rc<RefCell<dyn HoldsCard>> {
+        match &location {
+            CardLocation::Reserve(reserve_card_location) => self.reserve[&reserve_card_location.position()].clone(),
+            CardLocation::Foundation(foundation_card_location) => self.foundation[&foundation_card_location.position()].clone(),
+            CardLocation::Tableau(tableau_card_location) => self.tableau[&tableau_card_location.position()].clone(),
+        }
+    }
+
+    pub fn move_card(&mut self, card_move: CardMove) -> Result<(), GameError> {
+        let from = self.get_card_holder(&card_move.from);
+        let to = self.get_card_holder(&card_move.to);
+
+        to.borrow_mut()
+            .take_card_from(&mut *from.borrow_mut())
+    }
+
+    pub fn move_stack(&mut self, pick: PickableStack) {
+        // Pick stack
+        // Put stack
+        // Done
+        // Might produce a game error
     }
 }
 
@@ -133,5 +173,33 @@ impl<'a> std::fmt::Display for Game {
         let Game { tableau, reserve, foundation } = self;
 
         f.write_fmt(format_args!("{reserve}  {foundation}\n\n{tableau}"))
+    }
+}
+
+pub struct GameShownCards<'a>(&'a Game, &'a [&'a CardLocation]);
+
+impl std::fmt::Display for GameShownCards<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self(game, card_locations) = self;
+
+        let (reserve_card_locations, foundation_card_locations, tableau_card_locations): (Vec<_>, Vec<_>, Vec<_>) = card_locations.into_iter()
+            .thruple_partition_map(|v| match v {
+                CardLocation::Reserve(reserve_card_location) => TernaryVal::Left(reserve_card_location),
+                CardLocation::Foundation(foundation_card_location) => TernaryVal::Middle(foundation_card_location),
+                CardLocation::Tableau(tableau_card_location) => {
+                    // TODO this is a hack I threw together to get quick results
+                    let mut location = tableau_card_location.get_child_locations();
+                    location.push(tableau_card_location.clone());
+
+                    TernaryVal::Right(location)
+                },
+            });
+
+        let reserve_cards = game.reserve.show_cards(reserve_card_locations);
+        let foundation_cards = game.foundation.show_cards(foundation_card_locations);
+        // TODO this is a consequence of the hack. There are many allocations and I doubt I need them all
+        let tableau_cards = game.tableau.show_cards(tableau_card_locations.iter().flatten().collect());
+
+        f.write_fmt(format_args!("{}  {}\n\n{}", reserve_cards, foundation_cards, tableau_cards))
     }
 }

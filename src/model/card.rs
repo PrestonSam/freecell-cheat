@@ -43,7 +43,7 @@ impl Color {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Suit {
     Spades,
     Clubs,
@@ -135,7 +135,7 @@ impl std::fmt::Debug for ProximateCard {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Card(Rank, Suit);
 
 impl std::fmt::Debug for Card {

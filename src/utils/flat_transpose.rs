@@ -97,25 +97,24 @@ where
     }
 }
 
-
 #[test]
 pub fn flat_transpose_iterates_until_all_columns_exhausted() {
     let input = [
-        vec![ 'Y', ' ', 'e' ],
+        vec![ 'Y', ' ', 'e'           ],
         vec![ 'o', 's', ' ', 't', '!' ],
-        vec![ 'u', 'e', 'i', '!' ],
+        vec![ 'u', 'e', 'i', '!'      ],
     ];
 
     let expected_output = [
-        vec![ Some(&'Y'), Some(&'o'), Some(&'u') ],
-        vec![ Some(&' '), Some(&'s'), Some(&'e') ],
-        vec![ Some(&'e'), Some(&' '), Some(&'i') ],
-        vec![ None,       Some(&'t'), Some(&'!') ],
-        vec![ None,       Some(&'!'), None       ],
+        vec![ Some('Y'), Some('o'), Some('u') ],
+        vec![ Some(' '), Some('s'), Some('e') ],
+        vec![ Some('e'), Some(' '), Some('i') ],
+        vec![ None,      Some('t'), Some('!') ],
+        vec![ None,      Some('!'), None      ],
     ];
 
-    let slice = input.iter()
-        .map(|v| v.iter());
+    let slice = input.into_iter()
+        .map(|v| v.into_iter());
 
     for (found, expected) in slice.flat_transpose().zip(expected_output.into_iter().flatten()) {
         assert!(found == expected)
@@ -125,25 +124,25 @@ pub fn flat_transpose_iterates_until_all_columns_exhausted() {
 #[test]
 pub fn flat_transpose_iterates_when_some_columns_are_blank() {
     let input = [
-        vec![],
-        vec![ 1, 2, 3, 4, 5 ],
+        vec![                     ],
+        vec![ 1, 2, 3, 4, 5       ],
         vec![ 7, 8, 9, 10, 11, 12 ],
-        vec![],
-        vec![],
-        vec![],
+        vec![                     ],
+        vec![                     ],
+        vec![                     ],
     ];
 
     let expected_output = [
-        vec![ None, Some(&1), Some(&7),  None, None, None, ],
-        vec![ None, Some(&2), Some(&8),  None, None, None, ],
-        vec![ None, Some(&3), Some(&9),  None, None, None, ],
-        vec![ None, Some(&4), Some(&10), None, None, None, ],
-        vec![ None, Some(&5), Some(&11), None, None, None, ],
-        vec![ None, None,     Some(&12), None, None, None, ],
+        vec![ None, Some(1), Some(7),  None, None, None, ],
+        vec![ None, Some(2), Some(8),  None, None, None, ],
+        vec![ None, Some(3), Some(9),  None, None, None, ],
+        vec![ None, Some(4), Some(10), None, None, None, ],
+        vec![ None, Some(5), Some(11), None, None, None, ],
+        vec![ None, None,    Some(12), None, None, None, ],
     ];
 
-    let slice = input.iter()
-        .map(|v| v.iter());
+    let slice = input.into_iter()
+        .map(|v| v.into_iter());
     
     for (found, expected) in slice.flat_transpose().zip(expected_output.into_iter().flatten()) {
         assert!(found == expected, "{found:?} is not {expected:?}")

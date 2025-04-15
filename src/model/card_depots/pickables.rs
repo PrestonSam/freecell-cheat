@@ -1,51 +1,79 @@
+use derive_more::From;
+
 use crate::{model::{card::{Card, ProximateCard}, error::GameError, CardLocation}, utils::Ternary};
 
-#[derive(Debug)]
-pub struct PickableCard {
-    pub(super) card: Card,
+#[derive(Debug, From, Clone)]
+pub struct PickableCard(pub(crate) Card, pub(crate) CardLocation);
+
+impl PickableCard {
+    pub fn new(card: &Card, location: impl Into<CardLocation>) -> Self {
+        Self(card.clone(), location.into())
+    }
 }
 
 // Interesting idea, but you don't actually confirm that the pick matches the column or the game state at the time.
 // You could probably bind those together with this move cleverly, but presently I'm not able to figure that out.
-#[derive(Debug)]
-pub struct PickableStack<Token>
-where
-    Token: PartialEq + Eq,
+#[derive(Debug, PartialEq, Eq)]
+pub struct PickableStack
 {
     pub(super) deepest_card: Card,
-    pub(super) size: usize,
-    pub(super) state_token: Token
+    pub location: CardLocation,
+    pub(super) size: usize, // Seems to be in the CardLocation now, might not need this
+}
+
+impl PickableStack {
+    pub fn new(deepest_card: &Card, location: impl Into<CardLocation>, size: usize) -> Self {
+        Self {
+            deepest_card: deepest_card.clone(),
+            location: location.into(),
+            size,
+        }
+    }
+}
+
+impl PartialOrd for PickableStack {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for PickableStack {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let PickableStack { location: self_loc, size: self_size, .. } = self;
+        let PickableStack { location: othr_loc, size: othr_size, .. } = other;
+
+        self_loc.get_distance()
+            .cmp(&othr_loc.get_distance())
+            .then_with(|| self_size.cmp(othr_size))
+    }
 }
 
 pub trait HoldsCard {
-    // Proposal: drop PickableCard and instead produce a CardLocation
-    fn can_pick_card(&self) -> Option<PickableCard>;
+    fn try_get_card_pick(&self) -> Option<PickableCard>;
 
     // Proposal: instead of PickableCard, consume ref CardLocation and produce Option<CardMove>, which contains an owned pick and put CardLocation
-    fn can_put_card(&self, picked_card: &PickableCard) -> bool;
+    fn try_get_card_move(&self, picked_card: &PickableCard) -> Option<CardMove>;
 
     fn pick_card(&mut self) -> Result<Card, GameError>;
 
     // Should this use CardMove? Maybe this should be a function that only CardMove can see, or something?
-    fn take_card_from<T: HoldsCard>(&mut self, from: &mut T) -> Result<(), GameError>;
+    fn take_card_from(&mut self, from: &mut dyn HoldsCard) -> Result<(), GameError>;
 }
 
-pub trait HoldsStack<Token>
-where
-    Token: PartialEq + Eq,
+pub trait HoldsStack
 {
     // Proposal: produce StackLocation, which holds a size (usize) and a CardLocation (for the deepest or shallowest card?)
-    fn can_pick_stack(&self, pick_size: usize) -> Option<PickableStack<Token>>;
+    fn can_pick_stack(&self, pick_size: usize) -> Option<PickableStack>;
 
     // I think I should create a new struct called Transaction that's returned here instead of bool
     // The transaction is still just a description of what should be done and can't actually do anything
-    fn can_put_stack(&self, picked_stack: &PickableStack<Token>) -> bool;
+    fn can_put_stack(&self, picked_stack: &PickableStack) -> Option<StackMove>;
 
-    fn pick_stack(&mut self, pick: PickableStack<Token>) -> Result<Vec<Card>, GameError>;
+    fn pick_stack(&mut self, pick: PickableStack) -> Result<Vec<Card>, GameError>;
 
     // This should become something like "execute transaction" and should accept a Transaction
     // The token should also contain identity about where it's from. If I have four columns with 0 as their state then I could generate a transaction on one column and feed it into another.
-    fn take_stack_from<T: HoldsStack<Token>>(&mut self, from: &mut T, pick: PickableStack<Token>) -> Result<(), GameError>;
+    fn take_stack_from<T: HoldsStack>(&mut self, from: &mut T, pick: PickableStack) -> Result<(), GameError>;
 }
 
 pub trait FindProxPair<T> {
@@ -60,12 +88,36 @@ pub enum Move {
 
 // Should contain two card locations. I guess that's it, really
 pub struct CardMove {
-    from: CardLocation,   
-    to: CardLocation,
+    pub card: Card,
+    pub from: CardLocation,
+    pub to: CardLocation,
 }
 
+impl CardMove {
+    pub fn new(pick: &PickableCard, put: impl Into<CardLocation>) -> Self {
+        CardMove {
+            card: pick.0.clone(),
+            from: pick.1.clone(),
+            to: put.into(),
+        }
+    }
+}
+
+// Presumably there should be tokens here, too?
 pub struct StackMove {
-    size: usize,
-    from: CardLocation,
-    to: CardLocation,
+    pub size: usize,
+    pub deepest_card: Card,
+    pub from: CardLocation,
+    pub to: CardLocation,
+}
+
+impl StackMove {
+    pub fn new(pick: &PickableStack, put: impl Into<CardLocation>) -> Self {
+        StackMove {
+            size: pick.size,
+            deepest_card: pick.deepest_card.clone(),
+            from: pick.location.clone(),
+            to: put.into(),
+        }
+    }
 }
